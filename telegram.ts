@@ -9,25 +9,25 @@ export function startTelegram() {
   telegramBot = new Telegraf(process.env.TELEGRAM_TOKEN!);
   const chatId = process.env.TELEGRAM_CHAT_ID!;
 
-  // Middleware de autorizaci�n
+  // Middleware de autorización
   telegramBot.use(async (ctx, next) => {
     const userId = ctx.from?.id.toString();
 
     if (!userId || !isAuthorized(userId)) {
-      console.log(`?? Acceso denegado para usuario: ${userId}`);
-      await ctx.reply("No est�s autorizado para usar este bot.");
+      console.log(`⚠️ Acceso denegado para usuario: ${userId}`);
+      await ctx.reply("No estás autorizado para usar este bot.");
       return;
     }
 
     return next();
   });
 
-  // Comandos admin: gesti�n de usuarios
+  // Comandos admin: gestión de usuarios
   telegramBot.command("adduser", async (ctx) => {
     const userId = ctx.from.id.toString();
 
     if (!isAdmin(userId)) {
-      await ctx.reply("? Solo los administradores pueden agregar usuarios.");
+      await ctx.reply("❌ Solo los administradores pueden agregar usuarios.");
       return;
     }
 
@@ -42,14 +42,14 @@ export function startTelegram() {
     const role = (args[3] === "admin" ? "admin" : "user") as "admin" | "user";
 
     addUser(newUserId, name, role);
-    await ctx.reply(`? Usuario agregado:\nID: ${newUserId}\nNombre: ${name}\nRol: ${role}`);
+    await ctx.reply(`✅ Usuario agregado:\nID: ${newUserId}\nNombre: ${name}\nRol: ${role}`);
   });
 
   telegramBot.command("removeuser", async (ctx) => {
     const userId = ctx.from.id.toString();
 
     if (!isAdmin(userId)) {
-      await ctx.reply("? Solo los administradores pueden eliminar usuarios.");
+      await ctx.reply("❌ Solo los administradores pueden eliminar usuarios.");
       return;
     }
 
@@ -61,35 +61,35 @@ export function startTelegram() {
 
     const targetUserId = args[1];
     removeUser(targetUserId);
-    await ctx.reply(`? Usuario ${targetUserId} eliminado.`);
+    await ctx.reply(`✅ Usuario ${targetUserId} eliminado.`);
   });
 
   telegramBot.command("listusers", async (ctx) => {
     const userId = ctx.from.id.toString();
 
     if (!isAdmin(userId)) {
-      await ctx.reply("? Solo los administradores pueden ver la lista de usuarios.");
+      await ctx.reply("❌ Solo los administradores pueden ver la lista de usuarios.");
       return;
     }
 
     const users = listUsers();
     const list = Object.entries(users).map(
-      ([id, user]) => `? ${user.name} (${id})\n  Rol: ${user.role}\n  Agregado: ${user.added_at}`
+      ([id, user]) => `• ${user.name} (${id})\n  Rol: ${user.role}\n  Agregado: ${user.added_at}`
     );
 
-    await ctx.reply(`? Usuarios autorizados:\n\n${list.join("\n\n")}`);
+    await ctx.reply(`👥 Usuarios autorizados:\n\n${list.join("\n\n")}`);
   });
 
   telegramBot.command("help", async (ctx) => {
     const userId = ctx.from.id.toString();
     const isAdminUser = isAdmin(userId);
 
-    let help = `? *Comandos disponibles*\n\n`;
+    let help = `🏠 *Comandos disponibles*\n\n`;
     help += `Hablame en lenguaje natural para controlar tus dispositivos.\n\n`;
     help += `Ejemplos:\n`;
-    help += `? "apag� todo"\n`;
-    help += `? "�est� prendida la luz del cuarto?"\n`;
-    help += `? "pon� la l�mpara en azul"`;
+    help += `• "apagá todo"\n`;
+    help += `• "¿está prendida la luz del cuarto?"\n`;
+    help += `• "poné la lámpara en azul"`;
 
     if (isAdminUser) {
       help += `\n\n*Comandos de administrador:*\n`;
@@ -110,7 +110,7 @@ export function startTelegram() {
 
     // Verificar si el usuario puede controlar dispositivos
     if (!canControlDevices(userId)) {
-      await ctx.reply("? No ten�s permisos para controlar dispositivos. Solo pod�s consultar el estado.");
+      await ctx.reply("❌ No tenés permisos para controlar dispositivos. Solo podés consultar el estado.");
       return;
     }
 
@@ -118,13 +118,13 @@ export function startTelegram() {
     await ctx.reply(response);
   });
 
-  // Funci�n para enviar notificaciones autom�ticas desde HA
+  // Función para enviar notificaciones automáticas desde HA
   notifyFn = async (msg: string) => {
     await telegramBot.telegram.sendMessage(chatId, msg);
   };
 
   telegramBot.launch();
-  console.log("? Telegram bot iniciado");
+  console.log("✅ Telegram bot iniciado");
 
   return notifyFn;
 }
