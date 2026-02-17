@@ -1,5 +1,6 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { getStates, callService } from "./ha";
+import { canControlDevices } from "./users";
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
 
@@ -14,30 +15,35 @@ export async function runAgent(userMessage: string, userId: string): Promise<str
     attributes: s.attributes,
   }));
 
+  // Verificar permisos antes de ejecutar
+  const canControl = canControlDevices(userId);
+
   const systemPrompt = `
-Sos un asistente de hogar inteligente que controla dispositivos a traves de Home Assistant.
-Respondas siempre en espaol, de forma natural y coloquial.
-Cuando el usuario te pide algo, interpretes su intencion aunque no use comandos exactos.
+Sos un asistente de hogar inteligente que controla dispositivos a través de Home Assistant.
+Respondés siempre en español, de forma natural y coloquial.
+Cuando el usuario te pide algo, interpretás su intención aunque no use comandos exactos.
+
+${canControl ? "" : "IMPORTANTE: Este usuario solo puede CONSULTAR estados, NO puede controlar dispositivos. Si pide encender/apagar algo, explicále que no tiene permisos."}
 
 Estado actual de los dispositivos:
 ${JSON.stringify(context, null, 2)}
 
-Cuando necesites ejecutar una accion sobre un dispositivo, responde UNICAMENTE con este JSON:
+Cuando necesites ejecutar una acción sobre un dispositivo, respondé ÚNICAMENTE con este JSON:
 {
   "action": "call_service",
   "domain": "light",
   "service": "turn_off",
   "entity_id": "light.sala",
-  "message": "Listo, apagua la luz de la sala."
+  "message": "Listo, apagué la luz de la sala."
 }
 
-Si son multiples acciones, usa un array:
+Si son múltiples acciones, usá un array:
 {
   "actions": [
     { "domain": "light", "service": "turn_off", "entity_id": "light.sala" },
     { "domain": "switch", "service": "turn_off", "entity_id": "switch.televisor" }
   ],
-  "message": "Apagua las luces y el televisor. Buenas noches!"
+  "message": "Apagué las luces y el televisor. Buenas noches!"
 }
 
 Para luces RGB, el servicio es turn_on con atributos extra en el campo "extra":
@@ -50,7 +56,7 @@ Para luces RGB, el servicio es turn_on con atributos extra en el campo "extra":
     "rgb_color": [255, 0, 0],
     "brightness_pct": 80
   },
-  "message": "Listo, puse la lampara en rojo al 80%."
+  "message": "Listo, puse la lámpara en rojo al 80%."
 }
 
 Colores comunes en RGB:
@@ -61,18 +67,18 @@ Colores comunes en RGB:
 - Naranja: [255, 165, 0]
 - Violeta: [148, 0, 211]
 - Rosa: [255, 105, 180]
-- Blanco calido: usar color_temp_kelvin: 2700 (dentro de "extra")
-- Blanco frio: usar color_temp_kelvin: 6500 (dentro de "extra")
+- Blanco cálido: usar color_temp_kelvin: 2700 (dentro de "extra")
+- Blanco frío: usar color_temp_kelvin: 6500 (dentro de "extra")
 
-Si es solo una consulta sin accion:
+Si es solo una consulta sin acción:
 {
   "action": "none",
-  "message": "Tu respuesta aca"
+  "message": "Tu respuesta acá"
 }
 
 Dominios disponibles: light, switch, climate, media_player, cover, fan, alarm_control_panel.
 Servicios comunes: turn_on, turn_off, toggle.
-Para todos los dispositivos de un dominio usa entity_id: "all".
+Para todos los dispositivos de un dominio usá entity_id: "all".
   `.trim();
 
   const model = genAI.getGenerativeModel({
@@ -87,12 +93,20 @@ Para todos los dispositivos de un dominio usa entity_id: "all".
   const result = await chat.sendMessage(userMessage);
   const raw = result.response.text();
 
+  console.log("🤖 Respuesta Gemini:", raw);
+
   try {
     const jsonMatch = raw.match(/\{[\s\S]*\}/);
     if (!jsonMatch) return raw;
 
     const parsed = JSON.parse(jsonMatch[0]);
 
+    // Solo ejecutar si el usuario tiene permisos
+    if (!canControl && (parsed.action === "call_service" || parsed.actions)) {
+      return "❌ No tenés permisos para controlar dispositivos. Solo podés consultar el estado.";
+    }
+
+    // Múltiples acciones
     if (parsed.actions && Array.isArray(parsed.actions)) {
       await Promise.all(
         parsed.actions.map((a: any) =>
@@ -108,6 +122,7 @@ Para todos los dispositivos de un dominio usa entity_id: "all".
       return parsed.message ?? "Hecho.";
     }
 
+    // Acción única
     if (parsed.action === "call_service") {
       await callService(parsed.domain, parsed.service, {
         entity_id: parsed.entity_id,
