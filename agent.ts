@@ -93,8 +93,6 @@ Para todos los dispositivos de un dominio usá entity_id: "all".
   const result = await chat.sendMessage(userMessage);
   const raw = result.response.text();
 
-  console.log("🤖 Respuesta Gemini:", raw);
-
   try {
     const jsonMatch = raw.match(/\{[\s\S]*\}/);
     if (!jsonMatch) return raw;
