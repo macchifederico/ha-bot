@@ -1,0 +1,9 @@
+services:
+  ha-bot:
+    build: .
+    container_name: ha-bot
+    restart: unless-stopped
+    network_mode: host
+    env_file: .env
+    volumes:
+      - ./users.json:/app/users.json

@@ -126,7 +126,21 @@ ha-bot/
 
 ## Docker
 
-Próximamente: dockerización para integrar con el stack existente de Home Assistant, Pi-hole y Nginx Proxy Manager.
+```bash
+# Construir e iniciar
+docker compose up -d --build
+
+# Ver logs
+docker logs -f ha-bot
+```
+
+> **Importante:** antes de levantar el contenedor, asegurate de que el archivo `users.json` exista en la carpeta del proyecto. Si es una instalación nueva, crealo vacío:
+> ```bash
+> echo '{}' > users.json
+> ```
+> El archivo se monta como volumen, por lo que los cambios (agregar/eliminar usuarios) persisten entre reinicios del contenedor.
+
+El contenedor usa `network_mode: host` para poder conectarse a Home Assistant en `localhost`, sin necesidad de cambiar `HA_URL`.
 
 ## Seguridad
 
