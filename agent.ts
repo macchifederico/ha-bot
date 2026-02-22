@@ -1,5 +1,5 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
-import { getStates, callService } from "./ha";
+import { getStates, callService, createScene, createSceneSnapshot, createAutomation, deleteAutomation } from "./ha";
 import { canControlDevices } from "./users";
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
@@ -79,6 +79,80 @@ Si es solo una consulta sin acción:
 Dominios disponibles: light, switch, climate, media_player, cover, fan, alarm_control_panel.
 Servicios comunes: turn_on, turn_off, toggle.
 Para todos los dispositivos de un dominio usá entity_id: "all".
+
+--- ESCENAS ---
+
+Para crear una escena con estados específicos:
+{
+  "action": "create_scene",
+  "scene_id": "cine",
+  "entities": {
+    "light.sala": { "state": "on", "brightness": 80 },
+    "switch.tv": { "state": "on" }
+  },
+  "message": "Escena 'cine' creada!"
+}
+
+Para guardar el estado ACTUAL de dispositivos como escena (snapshot):
+{
+  "action": "create_scene_snapshot",
+  "scene_id": "sala_ahora",
+  "snapshot_entities": ["light.sala", "light.lampara_rgb"],
+  "message": "Guardé el estado actual de las luces como escena 'sala_ahora'!"
+}
+
+Para activar una escena existente usá call_service con domain "scene" y service "turn_on":
+{
+  "action": "call_service",
+  "domain": "scene",
+  "service": "turn_on",
+  "entity_id": "scene.cine",
+  "message": "Activé la escena cine."
+}
+
+--- PROGRAMACIÓN ---
+
+Para programar una acción a horario fijo o recurrente (persiste en HA como automatización):
+{
+  "action": "create_automation",
+  "automation_id": "bot_apagar_luces_23hs",
+  "alias": "Apagar luces a las 23hs",
+  "time": "23:00",
+  "service_call": {
+    "domain": "light",
+    "service": "turn_off",
+    "entity_id": "all"
+  },
+  "message": "Programé apagar todas las luces todos los días a las 23hs."
+}
+
+Para programar una acción con delay en minutos (efímero, no persiste si el bot se reinicia):
+{
+  "action": "schedule_delay",
+  "description": "Apagar TV en 30 minutos",
+  "delay_minutes": 30,
+  "service_call": {
+    "domain": "media_player",
+    "service": "turn_off",
+    "entity_id": "media_player.tv"
+  },
+  "message": "En 30 minutos apago el TV."
+}
+
+Para listar las automatizaciones creadas por el bot:
+{
+  "action": "list_automations",
+  "message": "Esto es lo que tengo programado:"
+}
+
+Para eliminar una automatización del bot:
+{
+  "action": "delete_automation",
+  "automation_id": "bot_apagar_luces_23hs",
+  "message": "Eliminé la programación."
+}
+
+Importante: los automation_id siempre empiezan con "bot_". El scene_id NO debe incluir el prefijo "scene.".
   `.trim();
 
   const model = genAI.getGenerativeModel({
@@ -99,8 +173,13 @@ Para todos los dispositivos de un dominio usá entity_id: "all".
 
     const parsed = JSON.parse(jsonMatch[0]);
 
+    const controlActions = [
+      "call_service", "create_scene", "create_scene_snapshot",
+      "create_automation", "schedule_delay", "delete_automation",
+    ];
+
     // Solo ejecutar si el usuario tiene permisos
-    if (!canControl && (parsed.action === "call_service" || parsed.actions)) {
+    if (!canControl && (parsed.actions || controlActions.includes(parsed.action))) {
       return "❌ No tenés permisos para controlar dispositivos. Solo podés consultar el estado.";
     }
 
@@ -126,6 +205,31 @@ Para todos los dispositivos de un dominio usá entity_id: "all".
         entity_id: parsed.entity_id,
         ...(parsed.extra ?? {}),
       });
+    } else if (parsed.action === "create_scene") {
+      await createScene(parsed.scene_id, parsed.entities);
+    } else if (parsed.action === "create_scene_snapshot") {
+      await createSceneSnapshot(parsed.scene_id, parsed.snapshot_entities);
+    } else if (parsed.action === "create_automation") {
+      await createAutomation(parsed.automation_id, parsed.alias, parsed.time, parsed.service_call);
+    } else if (parsed.action === "schedule_delay") {
+      const sc = parsed.service_call;
+      const ms = (parsed.delay_minutes ?? 0) * 60 * 1000;
+      setTimeout(() => callService(sc.domain, sc.service, { entity_id: sc.entity_id }), ms);
+    } else if (parsed.action === "list_automations") {
+      const allStatesNow = await getStates("automation");
+      const botAutomations = allStatesNow.filter((s: any) => s.entity_id.startsWith("automation.bot_"));
+      const list = botAutomations.length
+        ? botAutomations.map((s: any) => `• ${s.attributes.friendly_name ?? s.entity_id} (${s.state})`).join("\n")
+        : "No tenés nada programado todavía.";
+
+      history.push({ role: "user", parts: [{ text: userMessage }] });
+      history.push({ role: "model", parts: [{ text: raw }] });
+      if (history.length > 20) history.splice(0, 2);
+      conversationHistory.set(userId, history);
+
+      return `${parsed.message ?? "Programaciones del bot:"}\n${list}`;
+    } else if (parsed.action === "delete_automation") {
+      await deleteAutomation(parsed.automation_id);
     }
 
     history.push({ role: "user", parts: [{ text: userMessage }] });
