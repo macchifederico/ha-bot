@@ -1,6 +1,7 @@
 import { Telegraf } from "telegraf";
 import { handleCommand } from "./commands";
 import { isAuthorized, isAdmin, canControlDevices, addUser, removeUser, listUsers } from "./users";
+import { transcribeAudio } from "./agent";
 
 export let telegramBot: Telegraf;
 let notifyFn: (msg: string) => Promise<void>;
@@ -31,15 +32,13 @@ export function startTelegram() {
       return;
     }
 
-    const args = ctx.message.text.split(" ");
-    if (args.length < 3) {
+    const [, newUserId, name, roleArg] = ctx.message.text.trim().split(/\s+/);
+    if (!newUserId || !name) {
       await ctx.reply("Uso: /adduser <user_id> <nombre> [admin|user]\nEjemplo: /adduser 987654321 Celeste user");
       return;
     }
 
-    const newUserId = args[1];
-    const name = args[2];
-    const role = (args[3] === "admin" ? "admin" : "user") as "admin" | "user";
+    const role: "admin" | "user" = roleArg === "admin" ? "admin" : "user";
 
     addUser(newUserId, name, role);
     await ctx.reply(`✅ Usuario agregado:\nID: ${newUserId}\nNombre: ${name}\nRol: ${role}`);
@@ -53,13 +52,12 @@ export function startTelegram() {
       return;
     }
 
-    const args = ctx.message.text.split(" ");
-    if (args.length < 2) {
+    const [, targetUserId] = ctx.message.text.trim().split(/\s+/);
+    if (!targetUserId) {
       await ctx.reply("Uso: /removeuser <user_id>");
       return;
     }
 
-    const targetUserId = args[1];
     removeUser(targetUserId);
     await ctx.reply(`✅ Usuario ${targetUserId} eliminado.`);
   });
@@ -116,6 +114,39 @@ export function startTelegram() {
 
     const response = await handleCommand(ctx.message.text, userId);
     await ctx.reply(response);
+  });
+
+  // Handler de mensajes de voz
+  telegramBot.on("voice", async (ctx) => {
+    const userId = ctx.from.id.toString();
+
+    if (!canControlDevices(userId)) {
+      await ctx.reply("❌ No tenés permisos para controlar dispositivos.");
+      return;
+    }
+
+    try {
+      const fileId = ctx.message.voice.file_id;
+      const file = await ctx.telegram.getFile(fileId);
+      const fileUrl = `https://api.telegram.org/file/bot${process.env.TELEGRAM_TOKEN}/${file.file_path}`;
+
+      const audioResponse = await fetch(fileUrl);
+      const audioBuffer = Buffer.from(await audioResponse.arrayBuffer());
+
+      const transcription = await transcribeAudio(audioBuffer);
+      if (!transcription) {
+        await ctx.reply("No pude entender el audio. ¿Podés repetirlo?");
+        return;
+      }
+
+      await ctx.reply(`🎤 _"${transcription}"_`, { parse_mode: "Markdown" });
+
+      const response = await handleCommand(transcription, userId);
+      await ctx.reply(response);
+    } catch (err) {
+      console.error("Error procesando audio:", err);
+      await ctx.reply("Hubo un error procesando el audio.");
+    }
   });
 
   // Función para enviar notificaciones automáticas desde HA

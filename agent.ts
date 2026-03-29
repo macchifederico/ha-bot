@@ -4,6 +4,24 @@ import { canControlDevices } from "./users";
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
 
+export async function transcribeAudio(audioBuffer: Buffer): Promise<string> {
+  const model = genAI.getGenerativeModel({
+    model: process.env.GEMINI_MODEL ?? "gemini-2.0-flash",
+  });
+
+  const result = await model.generateContent([
+    {
+      inlineData: {
+        mimeType: "audio/ogg",
+        data: audioBuffer.toString("base64"),
+      },
+    },
+    "Transcribí exactamente lo que se dice en este audio. Devolvé solo el texto, sin explicaciones ni formato extra.",
+  ]);
+
+  return result.response.text().trim();
+}
+
 const conversationHistory = new Map<string, {role: string, parts: {text: string}[]}[]>();
 
 export async function runAgent(userMessage: string, userId: string): Promise<string> {
